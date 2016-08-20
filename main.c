@@ -1,3 +1,12 @@
+/*	TO-DO
+*	1. Write interrupt routine to read new values of K_P, K_I, K_D and Reference
+*	2. Complete get_from_eeprom() - retrieves stored values
+*	3. Complete write_to_eeprom() - stores new values (called during interrupt)
+*	4. Add LCD functionality to display K_P, K_I, K_D, Ref during setup and testing
+*	5. Investigate how to vary the PWM frequency
+*/
+
+
 /*****	ATMEGA32 SETUP ******
 *		ADC (Port A)
 *		0 = Accelerometer (Top)
@@ -5,7 +14,7 @@
 *		2 = K_P
 *		3 = K_I
 *		4 = K_D
-*		5 = Set Point
+*		5 = Reference
 */
 
 #include <avr/io.h>
@@ -23,7 +32,7 @@ int16_t Get_Measurement(uint8_t ch);
 int16_t Get_Reference(void);
 void TIMER0_OVF_ISR(void);
 float get_from_eeprom(unsigned char a);
-void write_to_eeprom(unsigned char a, float val);
+void write_to_eeprom(unsigned char a, int16_t val);
 
 /* P, I and D parameter values (P, I and D gains)
  *
@@ -63,18 +72,22 @@ struct GLOBAL_FLAGS
 
 int main(void)
 {
-	int16_t referenceValue, measurementValue, inputValue;
+	int16_t referenceValue, measurementValue, inputValue, lowMeas, hiMeas;
+	
 	Init();
 
 	sei();	// set global interrupt flag
-
+	
 	while(1)
 	{
 		// Run PID calculations once every PID timer timeout
 		if(gFlags.pidTimer)
 		{
 			referenceValue = Get_Reference();
-			measurementValue = Get_Measurement(0);
+			lowMeas = Get_Measurement(0);	// read accelerometer attached to wheel
+			hiMeas = Get_Measurement(1);	// read accelerometer attached to chassis
+			
+			measurementValue = hiMeas - lowMeas; //Get_Measurement(0);
 
 			inputValue = pid_Controller(referenceValue, measurementValue, &pidData);
 
@@ -85,10 +98,10 @@ int main(void)
 	}
 }
 
-/* Init of PID controller demo */
+/* Init */
 void Init(void)
 {
-	/* PID Related */
+	/* PID init */
 	pid_Init(K_P * SCALING_FACTOR, K_I * SCALING_FACTOR , K_D * SCALING_FACTOR , &pidData);
 
 	// Set up timer, enable timer/counter 0 overflow interrupt
@@ -102,9 +115,7 @@ void Init(void)
 	K_D = get_from_eeprom('D');
 	REF_VAL = get_from_eeprom('R');
 	
-	/*
-	* ADC
-	*/
+	/* ADC */
 	// set micro to use VCC with external decoupling cap as reference voltage
 	ADMUX = (1<<REFS0);
 
@@ -132,13 +143,26 @@ void Init(void)
  */
 void Set_Input(int16_t inputValue)
 {
-	uint8_t duty_cycle = 0x00;
-	float scaled = 0.0;
-	uint8_t adjust = 46; // adjust hard-coded for now - should be made adjustable by trimpot or something
+	/*
+	* 	Since speed of the motor is proportional to PWM frequency, speed specified in Hz
+	* 	Arbitrary values used here
+	*/
 
-	scaled = ((float)inputValue / (float)1023) * 255;
-	duty_cycle = (uint8_t)scaled; // scale to 8 bits
-	OCR0 = duty_cycle + adjust; // set duty cycle, 0-255 (255 = 100%)
+	int16_t maxSpeed = 9000;
+	int16_t minSpeed = 0;
+	int16_t maxPID = 128;	// no idea what the max correction value is yet
+	int16_t freqRange, newFreq;
+
+	// Find the available range between low and high speed
+	freqRange = maxSpeed - minSpeed;
+
+	// scale PID_input so it fits in the frequency range, and add the value of MIN_SPEED to place it in range
+	newFreq = ( ( (float)inputValue / (float)maxPID ) * freqRange ) + minSpeed;
+
+	//set_PWM_freq( new_Freq );
+	// NEED TO SET FREQUENCY HERE
+
+	OCR0 = 128; // set duty cycle, 0-255 (255 = 100%)
 }
 
 /* Read system process value
@@ -169,10 +193,11 @@ int16_t Get_Measurement(uint8_t ch)
 /* Read reference value.
  *
  * This will be set by trimpot or button
+ * 
  */
 int16_t Get_Reference(void)
 {
-  return 0;
+	return REF_VAL * SCALING_FACTOR;
 }
 
 /* Timer interrupt to control the sampling interval */
@@ -202,35 +227,40 @@ void TIMER0_OVF_ISR( void )
 *		R exists at address
 */
 float get_from_eeprom(unsigned char a)
-{/*
-	float read = 0.00;
-	const float addr = 0.00;
+{
+	//float read = 0.00;
+	//const float addr = 0.00;
 	
 	switch (a)
 	{
 		case 'P':
-		addr = 0xAABB;
-		break;
+			return 1.00;
+			//addr = 0xAABB;
+			break;
 		case 'I':
-		addr = 0xAABB;
-		break;
+			return 0.00;
+			//addr = 0xAABB;
+			break;
 		case 'D':
-		addr = 0xAABB;
-		break;
+			return 0.00;
+			//addr = 0xAABB;
+			break;
 		case 'R':
-		addr = 0xAABB;
-		break;
+			return 0.00;
+			//addr = 0xAABB;
+			break;
 	}
 	
+	/*
 	if (eeprom_is_ready())
 	{
 		read = eeprom_read_float(addr);
-	}
-	*/
+	}*/
+	
 	return 0.00;
 }
 
-void write_to_eeprom(unsigned char a, float val)
+void write_to_eeprom(unsigned char a, int16_t val)
 {
 	;
 }

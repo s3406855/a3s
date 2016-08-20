@@ -1,0 +1,14 @@
+$repeat 5
+	#50
+	PORTA.IN = 500
+	#50
+	PORTA.IN = 400
+	#50
+	PORTA.IN = 300
+	#50
+	PORTA.IN = 200
+	#50
+	PORTA.IN = 100
+	#50
+	PORTA.IN = 0
+$endrep
