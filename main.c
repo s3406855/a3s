@@ -1,27 +1,46 @@
+/*****	ATMEGA32 SETUP ******
+*		ADC (Port A)
+*		0 = Accelerometer (Top)
+*		1 = Accelerometer (Bottom)
+*		2 = K_P
+*		3 = K_I
+*		4 = K_D
+*		5 = Set Point
+*/
+
 #include <avr/io.h>
 #include <avr/interrupt.h>
 #include <stdint.h>
+#include <avr/eeprom.h>
 #include "pid.h"
 
-/* P, I and D parameter values
+/*
+*	prototypes
+*/
+void Init(void);
+void Set_Input(int16_t inputValue);
+int16_t Get_Measurement(uint8_t ch);
+int16_t Get_Reference(void);
+void TIMER0_OVF_ISR(void);
+float get_from_eeprom(unsigned char a);
+void write_to_eeprom(unsigned char a, float val);
+
+/* P, I and D parameter values (P, I and D gains)
  *
- * The K_P, K_I and K_D values (P, I and D gains)
- * need to be modified to adapt to the application at hand
- *
- * For Now - hard coded. Ideally these would be stored in flash and modified 
- * by way of buttons or trimpots
+ * Values to be stored in eeprom so that values persist between uses
+ * Will be controlled by buttons (ideally) or trimpots, with an interrupt to catch changes in value and store the result
  */
 
+float K_P = 1.00;
+float K_I = 0.00;
+float K_D = 0.00;
+float REF_VAL = 0.0;
+
+/*
 #define K_P     1.00
 #define K_I     0.00
 #define K_D     0.00
-
-/* Flags for status information */
-struct GLOBAL_FLAGS {
-  //! True when PID control loop should run one time
-  uint8_t pidTimer:1;
-  uint8_t dummy:7;
-} gFlags = {0, 0};
+*/
 
 //! Parameters for regulator
 struct PID_DATA pidData;
@@ -34,22 +53,36 @@ struct PID_DATA pidData;
  */
 #define TIME_INTERVAL   157
 
-/* Timer interrupt to control the sampling interval */
-//#pragma vector = TIMER0_OVF_vect
-
-void TIMER0_OVF_ISR( void )
+/* Flags for status information */
+struct GLOBAL_FLAGS
 {
-  static uint16_t i = 0;
-  
-  if (i < TIME_INTERVAL)
-  {
-	  i++;
-  }
-  else
-  {
-	  gFlags.pidTimer = TRUE;
-	  i = 0;
-  }
+	//! True when PID control loop should run one time
+	uint8_t pidTimer:1;
+	uint8_t dummy:7;
+}	gFlags = {0, 0};
+
+int main(void)
+{
+	int16_t referenceValue, measurementValue, inputValue;
+	Init();
+
+	sei();	// set global interrupt flag
+
+	while(1)
+	{
+		// Run PID calculations once every PID timer timeout
+		if(gFlags.pidTimer)
+		{
+			referenceValue = Get_Reference();
+			measurementValue = Get_Measurement(0);
+
+			inputValue = pid_Controller(referenceValue, measurementValue, &pidData);
+
+			Set_Input(inputValue);
+
+			gFlags.pidTimer = FALSE;
+		}
+	}
 }
 
 /* Init of PID controller demo */
@@ -62,6 +95,12 @@ void Init(void)
 	TCCR0 = (1<<CS00);
 	TIMSK = (1<<TOIE0);
 	TCNT0 = 0;
+	
+	/* Load stored K values */
+	K_P = get_from_eeprom('P');
+	K_I = get_from_eeprom('I');
+	K_D = get_from_eeprom('D');
+	REF_VAL = get_from_eeprom('R');
 	
 	/*
 	* ADC
@@ -83,45 +122,26 @@ void Init(void)
 	TCCR0 |= (1<<WGM00) | (1<<WGM01) | (1<<COM01) | (1<<CS00); // x1101001
 
 	// OC0 shares function with PB3, so it must be set to output to get a result
-	DDRB |= (1<<PB3); // set OC0 to output
+	//DDRB |= (1<<PB3); // set OC0 to output
 }
 
-void Init_ADC()
-{
-	// set micro to use VCC with external decoupling cap as reference voltage
-	ADMUX = (1<<REFS0);
-
-	// set to approx 93.75kHz (with a 12 meg crystal on ousb): division factor of 128
-	ADCSRA= (1<<ADEN) | (1<<ADPS2) | (1<<ADPS1) | (1<<ADPS0);
-
-	// This could be re-thought - decided to throw port inits in here
-	PORTA= 0x00;	// turn off PORTA pull-ups
-	DDRA = 0x00;	// all port A inputs
-	PORTB= 0x00;	// all PORTB outputs low
-	DDRB = 0xFF;	// all port B outputs
-	PORTC= 0xFF;	// all PORTC pull-ups on
-	DDRC = 0x00;	// all port C inputs
-}
-
-void Init_PWM()
-{
-	TCCR0 |= (1<<WGM00) | (1<<WGM01) | (1<<COM01) | (1<<CS00); // x1101001
-
-	// OC0 shares function with PB3, so it must be set to output to get a result
-	DDRB |= (1<<PB3); // set OC0 to output
-}
-
-/* Read reference value.
+/* Set control input to system
  *
- * This function must return the reference value.
- * May be constant or varying
+ * Set the output from the controller as input
+ * to system.
  */
-int16_t Get_Reference(void)
+void Set_Input(int16_t inputValue)
 {
-  return 0;
+	uint8_t duty_cycle = 0x00;
+	float scaled = 0.0;
+	uint8_t adjust = 46; // adjust hard-coded for now - should be made adjustable by trimpot or something
+
+	scaled = ((float)inputValue / (float)1023) * 255;
+	duty_cycle = (uint8_t)scaled; // scale to 8 bits
+	OCR0 = duty_cycle + adjust; // set duty cycle, 0-255 (255 = 100%)
 }
 
-/*! \brief Read system process value
+/* Read system process value
  *
  * This function must return the measured data
  */
@@ -146,45 +166,71 @@ int16_t Get_Measurement(uint8_t ch)
   //return 4;
 }
 
-/* Set control input to system
+/* Read reference value.
  *
- * Set the output from the controller as input
- * to system.
+ * This will be set by trimpot or button
  */
-void Set_Input(int16_t inputValue)
+int16_t Get_Reference(void)
 {
-	uint8_t duty_cycle = 0x00;
-	float scaled = 0.0;
-	uint8_t adjust = 46; // adjust hard-coded for now - should be made adjustable by trimpot or something
-
-	scaled = ((float)inputValue / (float)1023) * 255;
-	duty_cycle = (uint8_t)scaled; // scale to 8 bits
-	OCR0 = duty_cycle + adjust; // set duty cycle, 0-255 (255 = 100%)
+  return 0;
 }
 
-int main(void)
+/* Timer interrupt to control the sampling interval */
+//#pragma vector = TIMER0_OVF_vect
+
+void TIMER0_OVF_ISR( void )
 {
-	int16_t referenceValue, measurementValue, inputValue;
-	Init();
-	Init_ADC();
-	Init_PWM();
-
-	sei();	// re-enable global interrupts
-
-	while(1)
+	static uint16_t i = 0;
+	
+	if (i < TIME_INTERVAL)
 	{
-		// Run PID calculations once every PID timer timeout
-		if(gFlags.pidTimer)
-		{
-			referenceValue = Get_Reference();
-			measurementValue = Get_Measurement(0);
-
-			inputValue = pid_Controller(referenceValue, measurementValue, &pidData);
-
-			Set_Input(inputValue);
-
-			gFlags.pidTimer = FALSE;
-		}
+		i++;
+	}
+	else
+	{
+		gFlags.pidTimer = TRUE;
+		i = 0;
 	}
 }
 
+/*
+*	Fetches the four variables, P-I-D-REF from flash memory when the program is first run
+*
+*		P exists at address
+*		I exists at address
+*		D exists at address
+*		R exists at address
+*/
+float get_from_eeprom(unsigned char a)
+{/*
+	float read = 0.00;
+	const float addr = 0.00;
+	
+	switch (a)
+	{
+		case 'P':
+		addr = 0xAABB;
+		break;
+		case 'I':
+		addr = 0xAABB;
+		break;
+		case 'D':
+		addr = 0xAABB;
+		break;
+		case 'R':
+		addr = 0xAABB;
+		break;
+	}
+	
+	if (eeprom_is_ready())
+	{
+		read = eeprom_read_float(addr);
+	}
+	*/
+	return 0.00;
+}
+
+void write_to_eeprom(unsigned char a, float val)
+{
+	;
+}
