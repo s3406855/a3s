@@ -1,11 +1,8 @@
 /*	TO-DO
-*	1. Write interrupt routine to read new values of K_P, K_I, K_D and Reference
-*	2. Complete get_from_eeprom() - retrieves stored values
-*	3. Complete write_to_eeprom() - stores new values (called during interrupt)
-*	4. Add LCD functionality to display K_P, K_I, K_D, Ref during setup and testing
-*	5. Investigate how to vary the PWM frequency
+*	1. Come up with logic for the main process: outputting pulses while within bounds of shock
+*	2. Write interrupt routine to read new values of K_P, K_I, K_D and Reference
+*	3. Add LCD functionality to display K_P, K_I, K_D, Ref during setup and testing
 */
-
 
 /*****	ATMEGA32 SETUP ******
 *		ADC (Port A)
