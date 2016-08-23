@@ -5,20 +5,24 @@
 */
 
 /*****	ATMEGA32 SETUP ******
-*		ADC (Port A)
+*		Inputs / ADC (Port A)
 *		0 = Accelerometer (Top)
 *		1 = Accelerometer (Bottom)
-*		2 = K_P
-*		3 = K_I
-*		4 = K_D
-*		5 = Reference
+*		2 = Not used
+*		3 = K_P
+*		4 = K_I
+*		5 = K_D
+*		6 = Reference
+*
+*		Output
+*		Main PWM signal is PWM1A (PD5), Pin 19
 */
 
 #include <avr/io.h>
 #include <avr/interrupt.h>
 #include <stdint.h>
-#include <avr/eeprom.h>
 #include "pid.h"
+#include "arduino_libraries/Arduino.h"
 
 /*
 *	prototypes
@@ -33,14 +37,14 @@ void write_to_eeprom(unsigned char a, int16_t val);
 
 /* P, I and D parameter values (P, I and D gains)
  *
- * Values to be stored in eeprom so that values persist between uses
- * Will be controlled by buttons (ideally) or trimpots, with an interrupt to catch changes in value and store the result
+ * Controlled by trimpots
+ * Volatiles so that they can be seen by Linux for debugging
  */
 
-float K_P = 1.00;
-float K_I = 0.00;
-float K_D = 0.00;
-float REF_VAL = 0.0;
+volatile float K_P = 1.00;
+volatile float K_I = 0.00;
+volatile float K_D = 0.00;
+volatile float REF_VAL = 0.0;
 
 /*
 #define K_P     1.00
@@ -107,14 +111,20 @@ void Init(void)
 	TCNT0 = 0;
 	
 	/* Load stored K values */
-	K_P = get_from_eeprom('P');
-	K_I = get_from_eeprom('I');
-	K_D = get_from_eeprom('D');
-	REF_VAL = get_from_eeprom('R');
+	/* Get_Measurement() returns a 16-bit int between 0-1023, so this must be scaled to a float between 0-1 */
+	K_P = (float)Get_Measurement(3) / 1024;
+	K_I = (float)Get_Measurement(4) / 1024;
+	K_D = (float)Get_Measurement(5) / 1024;
+	REF_VAL = (float)Get_Measurement(6) / 1024;
 	
 	/* ADC */
 	// set micro to use VCC with external decoupling cap as reference voltage
 	ADMUX = (1<<REFS0);
+	
+	// PWM -- initialize PWM1A
+	pinMode(19, OUTPUT); // arduino library function
+	pwmFreq(19, 2000); // Testing
+	pwmDuty(19, 128); // Testing
 
 	// set to approx 93.75kHz (with a 12 meg crystal on ousb): division factor of 128
 	ADCSRA= (1<<ADEN) | (1<<ADPS2) | (1<<ADPS1) | (1<<ADPS0);
@@ -168,23 +178,23 @@ void Set_Input(int16_t inputValue)
  */
 int16_t Get_Measurement(uint8_t ch)
 {
-  // select adc channel (0-7)
-  ch = ch & 7;	// bit masking just ensures that channel can never be > 7
-  ADMUX |= ch;
+	// select adc channel (0-7)
+	ch = ch & 7;	// bit masking just ensures that channel can never be > 7
+	ADMUX |= ch;
 
-  // start a conversion by setting ADSC bit in ADCSRA
-  ADCSRA |= (1<<ADSC);
+	// start a conversion by setting ADSC bit in ADCSRA
+	ADCSRA |= (1<<ADSC);
 
-  // wait for it to complete: ADIF bit gets set when conversion is complete
-  // ASM equiv: sbis	ADCSR, ADIF
-  while (!(ADCSRA & (1<<ADIF))) {};
+	// wait for it to complete: ADIF bit gets set when conversion is complete
+	// ASM equiv: sbis	ADCSR, ADIF
+	while (!(ADCSRA & (1<<ADIF))) {};
 
-  // clear ADIF
-  // From the datasheet i thought this happened automatically, but perhaps not...
-  ADCSRA |= (1<<ADIF);
+	// clear ADIF
+	// From the datasheet i thought this happened automatically, but perhaps not...
+	ADCSRA |= (1<<ADIF);
           
-  return ADC;
-  //return 4;
+	return ADC;
+	//return 4;
 }
 
 /* Read reference value.
@@ -213,51 +223,4 @@ void TIMER0_OVF_ISR( void )
 		gFlags.pidTimer = TRUE;
 		i = 0;
 	}
-}
-
-/*
-*	Fetches the four variables, P-I-D-REF from flash memory when the program is first run
-*
-*		P exists at address
-*		I exists at address
-*		D exists at address
-*		R exists at address
-*/
-float get_from_eeprom(unsigned char a)
-{
-	//float read = 0.00;
-	//const float addr = 0.00;
-	
-	switch (a)
-	{
-		case 'P':
-			return 1.00;
-			//addr = 0xAABB;
-			break;
-		case 'I':
-			return 0.00;
-			//addr = 0xAABB;
-			break;
-		case 'D':
-			return 0.00;
-			//addr = 0xAABB;
-			break;
-		case 'R':
-			return 0.00;
-			//addr = 0xAABB;
-			break;
-	}
-	
-	/*
-	if (eeprom_is_ready())
-	{
-		read = eeprom_read_float(addr);
-	}*/
-	
-	return 0.00;
-}
-
-void write_to_eeprom(unsigned char a, int16_t val)
-{
-	;
 }

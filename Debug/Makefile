@@ -38,7 +38,10 @@ SUBDIRS :=
 # Add inputs and outputs from these tool invocations to the build variables 
 C_SRCS +=  \
 ../main.c \
-../pid.c
+../pid.c \
+../pins_arduino.c \
+../wiring_analog.c \
+../wiring_digital.c
 
 
 PREPROCESSING_SRCS += 
@@ -49,19 +52,31 @@ ASM_SRCS +=
 
 OBJS +=  \
 main.o \
-pid.o
+pid.o \
+pins_arduino.o \
+wiring_analog.o \
+wiring_digital.o
 
 OBJS_AS_ARGS +=  \
 main.o \
-pid.o
+pid.o \
+pins_arduino.o \
+wiring_analog.o \
+wiring_digital.o
 
 C_DEPS +=  \
 main.d \
-pid.d
+pid.d \
+pins_arduino.d \
+wiring_analog.d \
+wiring_digital.d
 
 C_DEPS_AS_ARGS +=  \
 main.d \
-pid.d
+pid.d \
+pins_arduino.d \
+wiring_analog.d \
+wiring_digital.d
 
 OUTPUT_FILE_PATH +=a3s_port.elf
 
@@ -82,10 +97,16 @@ LINKER_SCRIPT_DEP+=
 
 
 
+
+
+
+
+
+
 ./%.o: .././%.c
 	@echo Building file: $<
 	@echo Invoking: AVR/GNU C Compiler : 4.9.2
-	$(QUOTE)C:\Program Files\Atmel\Studio\7.0\toolchain\avr8\avr8-gnu-toolchain\bin\avr-gcc.exe$(QUOTE)  -x c -funsigned-char -funsigned-bitfields -DDEBUG  -I"C:\Program Files\Atmel\Studio\7.0\Packs\atmel\ATmega_DFP\1.0.106\include"  -O1 -ffunction-sections -fdata-sections -fpack-struct -fshort-enums -g2 -Wall -mmcu=atmega32 -B "C:\Program Files\Atmel\Studio\7.0\Packs\atmel\ATmega_DFP\1.0.106\gcc\dev\atmega32" -c -std=gnu99 -MD -MP -MF "$(@:%.o=%.d)" -MT"$(@:%.o=%.d)" -MT"$(@:%.o=%.o)"   -o "$@" "$<" 
+	$(QUOTE)C:\Program Files\Atmel\Studio\7.0\toolchain\avr8\avr8-gnu-toolchain\bin\avr-gcc.exe$(QUOTE)  -x c -funsigned-char -funsigned-bitfields -DDEBUG  -I"C:\Program Files\Atmel\Studio\7.0\Packs\atmel\ATmega_DFP\1.0.106\include" -I"../arduino_libraries"  -O1 -ffunction-sections -fdata-sections -fpack-struct -fshort-enums -g2 -Wall -mmcu=atmega32 -B "C:\Program Files\Atmel\Studio\7.0\Packs\atmel\ATmega_DFP\1.0.106\gcc\dev\atmega32" -c -std=gnu99 -MD -MP -MF "$(@:%.o=%.d)" -MT"$(@:%.o=%.d)" -MT"$(@:%.o=%.o)"   -o "$@" "$<" 
 	@echo Finished building: $<
 	
 
