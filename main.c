@@ -1,7 +1,6 @@
 /*	TO-DO
-*	1. Come up with logic for the main process: outputting pulses while within bounds of shock
-*	2. Write interrupt routine to read new values of K_P, K_I, K_D and Reference
-*	3. Add LCD functionality to display K_P, K_I, K_D, Ref during setup and testing
+*	-- Come up with logic for the main process: outputting pulses while within bounds of shock
+*	-- Add LCD functionality to display K_P, K_I, K_D, Ref during setup and testing - Arduino library for this?
 */
 
 /*****	ATMEGA32 SETUP ******
